@@ -203,7 +203,11 @@ void Audio::Init() {
 		self = new Audio();
 	}
 
+#ifdef __3DS__
+	int sample_rate = 22050;    // halve the mixing work on the 3DS CPU
+#else
 	int  sample_rate = 44100;
+#endif
 	bool stereo      = true;
 
 	config->value("config/audio/sample_rate", sample_rate, sample_rate);
