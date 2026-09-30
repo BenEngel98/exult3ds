@@ -249,6 +249,11 @@ extern "C" {
 // pathfinding, deep C++ call chains).
 unsigned int __stacksize__ = 4 * 1024 * 1024;
 
+// libctru reserves 32 MB of "linear" memory for GPU-side buffers by default.
+// Exult only needs the framebuffers and audio buffers there, so keep most of
+// the RAM for the game itself (helps the original 3DS most).
+unsigned int __ctru_linear_heap_size = 6 * 1024 * 1024;
+
 // The 3DS scheduler is strictly priority based and newlib's sched_yield()
 // is a do-nothing stub, so a thread that "yields" while waiting for a
 // lower-priority thread spins forever. Make yield() a real 1 ms sleep.
