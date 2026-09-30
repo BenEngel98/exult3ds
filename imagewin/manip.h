@@ -85,8 +85,10 @@ public:
 	using uintD = typename color_d::T;
 
 	static uintD rgb(unsigned int r, unsigned int g, unsigned int b) {
+		// Always write an opaque alpha: on formats with an alpha channel (e.g.
+		// the Nintendo 3DS framebuffer) leaving it zero makes everything invisible.
 		return ((r >> (8 - fmt.Rbits)) << fmt.Rshift) | ((g >> (8 - fmt.Gbits)) << fmt.Gshift)
-			   | ((b >> (8 - fmt.Bbits)) << fmt.Bshift);
+			   | ((b >> (8 - fmt.Bbits)) << fmt.Bshift) | fmt.Amask;
 	}
 
 	static void split_dest(uintD pix, unsigned int& r, unsigned int& g, unsigned int& b) {

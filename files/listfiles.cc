@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "utils.h"
 
 #include <cstring>
+#include <cctype>
 #include <iostream>
 #include <string>
 
@@ -130,6 +131,75 @@ int U7ListFiles(const std::string& mask, FileList& files, bool quiet) {
 
 	delete[] stripped_path;
 	FindClose(handle);
+	return 0;
+}
+
+#elif defined(__3DS__)    // Nintendo 3DS: newlib has no glob(), walk the directory ourselves
+
+#	include <dirent.h>
+
+// Minimal wildcard matcher supporting '*' and '?', case-insensitive
+// (the SD card is FAT, so case never matters there).
+static bool n3ds_wildmatch(const char* pat, const char* str) {
+	while (*pat) {
+		if (*pat == '*') {
+			while (*pat == '*') {
+				++pat;
+			}
+			if (!*pat) {
+				return true;
+			}
+			for (const char* s = str; *s; ++s) {
+				if (n3ds_wildmatch(pat, s)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if (!*str) {
+			return false;
+		}
+		if (*pat != '?' && std::tolower(static_cast<unsigned char>(*pat)) != std::tolower(static_cast<unsigned char>(*str))) {
+			return false;
+		}
+		++pat;
+		++str;
+	}
+	return !*str;
+}
+
+int U7ListFiles(const std::string& mask, FileList& files, bool quiet) {
+	string            path(get_system_path(mask));
+	string::size_type slash = path.find_last_of('/');
+	string            dir;
+	string            pattern;
+	if (slash == string::npos) {
+		dir     = ".";
+		pattern = path;
+	} else {
+		dir     = path.substr(0, slash);
+		pattern = path.substr(slash + 1);
+		if (dir.empty()) {
+			dir = "/";
+		}
+	}
+	DIR* d = opendir(dir.c_str());
+	if (!d) {
+		if (!quiet) {
+			std::cerr << "U7ListFiles: cannot open directory " << dir << std::endl;
+		}
+		return 0;    // Treat like "no matches", as glob() would.
+	}
+	while (dirent* ent = readdir(d)) {
+		const char* name = ent->d_name;
+		if (name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+			continue;
+		}
+		if (n3ds_wildmatch(pattern.c_str(), name)) {
+			files.push_back(dir + "/" + name);
+		}
+	}
+	closedir(d);
 	return 0;
 }
 

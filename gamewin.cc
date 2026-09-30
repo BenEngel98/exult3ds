@@ -403,6 +403,14 @@ Game_window::Game_window(
 	const string default_touch_pathfind    = "yes";
 	const string default_shortcutbar       = "translucent";
 	const string default_outline           = "black";
+#elif defined(__3DS__)
+	// Touch screen, but real buttons: no on-screen dpad needed.
+	const string default_scroll_with_mouse = "no";
+	const string default_item_menu         = "yes";
+	const string default_dpad_location     = "no";
+	const string default_touch_pathfind    = "yes";
+	const string default_shortcutbar       = "translucent";
+	const string default_outline           = "black";
 #else
 	const string default_scroll_with_mouse = "yes";
 	const string default_item_menu         = "no";

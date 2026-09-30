@@ -945,6 +945,11 @@ int wait_delay(int ms, int startcol, int ncol, int rotspd) {
 		} else {
 			SDL_Delay(delay - (ticks2 - ticks1));
 		}
+#ifdef __3DS__
+		// 3DS: static screens are only presented once; re-present while idle so
+		// the last frame reliably reaches the LCD (cheap: one 400x240 copy).
+		gwin->get_win()->show();
+#endif
 		if (abs(ncol) > 1 && ticks2 > last_rotate + rot_speed) {
 			gwin->get_win()->rotate_colors(startcol, ncol, 1);
 			while (ticks2 > last_rotate + rot_speed) {

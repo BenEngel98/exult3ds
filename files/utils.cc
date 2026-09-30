@@ -787,6 +787,8 @@ string Get_home() {
 #	ifdef ANDROID
 	const char* home = SDL_GetAndroidInternalStoragePath();
 	home_directory   = home;
+#	elif defined(__3DS__)
+	home_directory = "sdmc:/3ds/exult";
 #	else
 	const char* home = nullptr;
 	if ((home = getenv("HOME")) != nullptr) {
@@ -857,6 +859,21 @@ void setup_data_dir(const std::string& data_path, const char* runpath) {
 		add_system_path("<DATA>", path);
 		return;
 	}
+#endif
+#ifdef __3DS__
+	// Exult's own data files live in the romfs embedded in the .3dsx
+	ignore_unused_variable_warning(data_path, runpath);
+	add_system_path("<DATA>", "romfs:/data");
+	if (U7exists(EXULT_FLX)) {
+		return;
+	}
+	// Fallback: a data folder next to the game folders on the SD card
+	add_system_path("<DATA>", "sdmc:/3ds/exult/data");
+	if (U7exists(EXULT_FLX)) {
+		return;
+	}
+	std::cerr << "Could not find 'exult.flx' in romfs:/data or sdmc:/3ds/exult/data" << std::endl;
+	exit(-1);
 #endif
 #ifdef ANDROID
 	// We always have the APK with the bundled flx files
@@ -959,6 +976,9 @@ static string Get_savehome_dir(const string& home_dir, const string& config_dir)
 	string savehome_dir(home_dir);
 	savehome_dir += "/config/settings/exult";
 	return savehome_dir;
+#elif defined(__3DS__)
+	ignore_unused_variable_warning(config_dir);
+	return home_dir;    // saves live next to the game data: sdmc:/3ds/exult/<game>/
 #elif defined(XWIN)
 	ignore_unused_variable_warning(config_dir);
 	string savehome_dir(home_dir);
@@ -984,6 +1004,9 @@ static string Get_gamehome_dir(const string& home_dir, const string& config_dir)
 	string gamehome_dir(home_dir);
 	gamehome_dir += "/config/non-packaged/data/exult";
 	return gamehome_dir;
+#elif defined(__3DS__)
+	ignore_unused_variable_warning(config_dir);
+	return home_dir;    // games are found at sdmc:/3ds/exult/blackgate etc.
 #elif defined(XWIN)
 	ignore_unused_variable_warning(home_dir, config_dir);
 	return EXULT_DATADIR;

@@ -582,7 +582,7 @@ int LowLevelMidiDriver::threadMain() {
 		}
 
 		// maximum wait of 1 second
-		time_till_next = std::min(1000, time_till_next);
+		time_till_next = std::min<sint32>(1000, time_till_next);
 
 		if (time_till_next <= LLMD_MINIMUM_YIELD_THRESHOLD) {
 			bool wait = false;

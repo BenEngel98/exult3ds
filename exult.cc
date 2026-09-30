@@ -92,6 +92,9 @@
 #endif    // __GNUC__
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef __3DS__
+#	include <sys/stat.h>
+#endif
 static const SDL_MouseID EXSDL_TOUCH_MOUSEID = SDL_TOUCH_MOUSEID;
 static const SDL_TouchID EXSDL_MOUSE_TOUCHID = SDL_MOUSE_TOUCHID;
 #ifdef __GNUC__
@@ -240,7 +243,35 @@ void do_cleanup_output() {
 #	define EXULT_IMAGE_SUFFIX "pcx"
 #endif    // HAVE_PNG_H
 
+#ifdef __3DS__
+extern "C" {
+// Exult needs far more stack than the 3DS default (usecode interpreter,
+// pathfinding, deep C++ call chains).
+unsigned int __stacksize__ = 4 * 1024 * 1024;
+
+// The 3DS scheduler is strictly priority based and newlib's sched_yield()
+// is a do-nothing stub, so a thread that "yields" while waiting for a
+// lower-priority thread spins forever. Make yield() a real 1 ms sleep.
+void svcSleepThread(long long ns);
+
+int sched_yield(void) {
+	svcSleepThread(1000000LL);
+	return 0;
+}
+}
+#endif
+
 int main(int argc, char* argv[]) {
+#ifdef __3DS__
+	// No console on the 3DS: keep a log on the SD card.
+	mkdir("sdmc:/3ds", 0755);
+	mkdir("sdmc:/3ds/exult", 0755);
+	freopen("sdmc:/3ds/exult/exult_log.txt", "w", stdout);
+	freopen("sdmc:/3ds/exult/exult_err.txt", "w", stderr);
+	setvbuf(stdout, nullptr, _IONBF, 0);
+	setvbuf(stderr, nullptr, _IONBF, 0);
+	std::cout << "Exult 3DS: main() entered" << std::endl;
+#endif
 	bool needhelp    = false;
 	bool showversion = false;
 	int  result;
@@ -761,6 +792,89 @@ bool Handle_device_connection_event(void* userdata, SDL_Event* event) {
 	return true;
 }
 
+#ifdef __3DS__
+/*
+ *  Nintendo 3DS: turn gamepad buttons into the keyboard shortcuts Exult
+ *  already understands. The circle pad is handled natively as the left stick
+ *  (walking); the touch screen acts as the mouse.
+ *
+ *    D-pad     arrow keys (walk)        Start   Esc (close / game menu)
+ *    A         Enter                    Select  T   (target mode)
+ *    B         Esc (close gump)         L       C   (toggle combat)
+ *    X         I   (inventory)          R       S   (save / restore)
+ *    Y         Z   (stats)              ZL      F   (eat)   ZR  K (use keys)
+ */
+static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
+	switch (b) {
+	case SDL_GAMEPAD_BUTTON_DPAD_UP:
+		return SDLK_UP;
+	case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+		return SDLK_DOWN;
+	case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+		return SDLK_LEFT;
+	case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+		return SDLK_RIGHT;
+	case SDL_GAMEPAD_BUTTON_SOUTH:    // A on the 3DS (SDL swaps to Nintendo labels)
+		return SDLK_RETURN;
+	case SDL_GAMEPAD_BUTTON_EAST:    // B
+		return SDLK_ESCAPE;
+	case SDL_GAMEPAD_BUTTON_WEST:    // Y
+		return SDLK_Z;
+	case SDL_GAMEPAD_BUTTON_NORTH:    // X
+		return SDLK_I;
+	case SDL_GAMEPAD_BUTTON_START:
+		return SDLK_ESCAPE;
+	case SDL_GAMEPAD_BUTTON_BACK:    // Select
+		return SDLK_T;
+	case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
+		return SDLK_C;
+	case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
+		return SDLK_S;
+	default:
+		return SDLK_UNKNOWN;
+	}
+}
+
+static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
+	ignore_unused_variable_warning(userdata);
+	if (event->type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event->type != SDL_EVENT_GAMEPAD_BUTTON_UP) {
+		if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION
+			&& (event->gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || event->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)) {
+			// ZL / ZR arrive as triggers: treat as digital keys.
+			static bool held[2] = {false, false};
+			const int   idx     = event->gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? 0 : 1;
+			const bool  down    = event->gaxis.value > 16000;
+			if (down != held[idx]) {
+				held[idx] = down;
+				SDL_Event ev;
+				SDL_zero(ev);
+				ev.type         = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+				ev.key.timestamp = event->gaxis.timestamp;
+				ev.key.key      = idx == 0 ? SDLK_F : SDLK_K;
+				ev.key.scancode = SDL_GetScancodeFromKey(ev.key.key, nullptr);
+				ev.key.down     = down;
+				SDL_PushEvent(&ev);
+			}
+		}
+		return true;
+	}
+	const SDL_Keycode key = n3ds_button_key(static_cast<SDL_GamepadButton>(event->gbutton.button));
+	if (key == SDLK_UNKNOWN) {
+		return true;
+	}
+	SDL_Event ev;
+	SDL_zero(ev);
+	ev.type          = event->gbutton.down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+	ev.key.timestamp = event->gbutton.timestamp;
+	ev.key.key       = key;
+	ev.key.scancode  = SDL_GetScancodeFromKey(key, nullptr);
+	ev.key.down      = event->gbutton.down;
+	ev.key.repeat    = false;
+	SDL_PushEvent(&ev);
+	return true;
+}
+#endif
+
 /*
  *  Initialize and create main window.
  */
@@ -772,6 +886,9 @@ static void Init() {
 	const Uint32 joyinit = 0;
 #if defined(SDL_PLATFORM_IOS) || defined(ANDROID)
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "Landscape");
+	Mouse::use_touch_input = true;
+#endif
+#if defined(__3DS__)
 	Mouse::use_touch_input = true;
 	// Remove SDL_HINT_MOUSE_EMULATE_WARP_WITH_RELATIVE set as "0"
 #	if defined(SDL_PLATFORM_IOS)
@@ -818,6 +935,9 @@ static void Init() {
 	// many, without needing to modify each individual loop, and to
 	// make sure that SDL_Gamepad objects are always ready.
 	SDL_AddEventWatch(Handle_device_connection_event, nullptr);
+#ifdef __3DS__
+	SDL_AddEventWatch(n3ds_gamepad_watch, nullptr);
+#endif
 
 	// Load games and mods; also stores system paths:
 	gamemanager = new GameManager();
@@ -3153,14 +3273,20 @@ void setup_video(
 #ifdef DEBUG
 		cout << "Reading video menu adjustable configuration options" << endl;
 #endif
-#if defined(SDL_PLATFORM_IOS) || defined(ANDROID)
+#if defined(SDL_PLATFORM_IOS) || defined(ANDROID) || defined(__3DS__)
 		// Default resolution is 320x240 with 1x scaling
 		const int    w                   = 320;
 		const int    h                   = 240;
 		const int    sc                  = 1;
 		const string default_scaler      = "point";
 		const string default_fill_scaler = "point";
+#	ifdef __3DS__
+		// 3DS: the top screen is 400x240 and the game area is set to match, so
+		// no scaling happens at all; "Fit" keeps things 1:1.
+		const string default_fmode       = "Fit";
+#	else
 		const string default_fmode       = "Fill";
+#	endif
 		fullscreen                       = true;
 		// [SDL 3] force_bpp is set to 32 in imagewin/imagewin.cc
 		// discard the config/video/force_bpp
@@ -3211,7 +3337,7 @@ void setup_video(
 		}
 		int dw = resx * scaleval;
 		int dh = resy * scaleval;
-#if defined(SDL_PLATFORM_IOS) || defined(ANDROID)
+#if defined(SDL_PLATFORM_IOS) || defined(ANDROID) || defined(__3DS__)
 		// Default display is desktop
 		const SDL_DisplayMode* dispmode = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
 		if (dispmode) {
@@ -3225,8 +3351,14 @@ void setup_video(
 #endif
 		config->value(vidStr + "/display/width", resx, dw);
 		config->value(vidStr + "/display/height", resy, dh);
+#ifdef __3DS__
+		// Game area = full top screen, 1:1 pixels
+		config->value(vidStr + "/game/width", gw, dw);
+		config->value(vidStr + "/game/height", gh, dh);
+#else
 		config->value(vidStr + "/game/width", gw, 320);
 		config->value(vidStr + "/game/height", gh, 200);
+#endif
 		config->value(vidStr + "/fill_mode", fmode_string, default_fmode);
 		fillmode = Image_window::string_to_fillmode(fmode_string.c_str());
 		if (fillmode == 0) {
@@ -3257,7 +3389,7 @@ void setup_video(
 		config->set((vidStr + "/fill_scaler").c_str(), fillScalerName, false);
 	}
 	if (video_init) {
-#ifdef DEBUG
+#if defined(DEBUG) || defined(__3DS__)
 		cout << "Initializing Game_window to " << resx << " resX, " << resy << " resY, " << gw << " gameW, " << gh << " gameH, "
 			 << scaleval << " scale, " << scalerName << " scaler, " << fmode_string << " fill mode, " << fillScalerName
 			 << " fill scaler, " << (fullscreen ? "full screen" : "window") << endl;

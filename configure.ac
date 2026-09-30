@@ -128,6 +128,13 @@ case "$host_os" in
 		AC_MSG_RESULT([not sure... guessing X11])
 		;;
 esac
+if test "x$host_os" = "xeabi" -o "x$host_os" = "xnone-eabi"; then
+	dnl arm-none-eabi = Nintendo 3DS homebrew (devkitARM)
+	WINDOWING_SYSTEM="-D__3DS__"
+	AC_DEFINE(N3DS, 1, [Using Nintendo 3DS])
+	ARCH=n3ds
+	AC_MSG_RESULT([-> Nintendo 3DS])
+fi
 
 if echo $host_os | grep "cygwin\|mingw" > /dev/null 2>&1; then
 	AC_CHECK_TOOL([WINDRES], [windres])
