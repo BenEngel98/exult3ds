@@ -63,6 +63,9 @@ Boston, MA  02111-1307, USA.
 #	endif
 #endif    // __GNUC__
 #include <SDL3/SDL.h>
+#ifdef __3DS__
+#	include "n3ds_kbd.h"
+#endif
 #ifdef __GNUC__
 #	pragma GCC diagnostic pop
 #endif    // __GNUC__
@@ -605,7 +608,31 @@ bool Image_window::create_scale_surfaces(int w, int h, int bpp) {
 #endif
 		SDL_SetWindowFullscreen(screen_window, fullscreen);
 	} else {
+#ifdef __3DS__
+		// Put the game on the top screen (display 0) or, after a swap, on the
+		// bottom touch screen (display 1).
+		{
+			int            count    = 0;
+			SDL_DisplayID* displays = SDL_GetDisplays(&count);
+			const int      want     = n3ds_game_on_bottom() ? 1 : 0;
+			SDL_DisplayID  target   = (displays && count > want) ? displays[want] : 0;
+			SDL_free(displays);
+			SDL_PropertiesID props = SDL_CreateProperties();
+			SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "");
+			SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
+			SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h);
+			SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+			if (target) {
+				SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(target));
+				SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(target));
+			}
+			screen_window = SDL_CreateWindowWithProperties(props);
+			SDL_DestroyProperties(props);
+		}
+		n3ds_set_game_window(screen_window);
+#else
 		screen_window = SDL_CreateWindow("", w, h, flags);
+#endif
 #if 0
 		{
 			SDL_DisplayMode closest_mode;
@@ -2216,8 +2243,23 @@ void Image_window::UpdateRect(SDL_FRect* dirtyRect, SDL_FRect* fullRect, bool fo
 			std::cerr << "SDL_RenderPresent failed: " << (err ? err : "") << std::endl;
 			SDL_ClearError();
 		}
+#ifdef __3DS__
+		// Keep the other screen (touch keyboard / info panel) fresh too.
+		n3ds_kbd_present();
+#endif
 	}
 }
+
+#ifdef __3DS__
+void Image_window::n3ds_drop_window() {
+	free_surface();
+	if (screen_window != nullptr) {
+		SDL_DestroyWindow(screen_window);
+		screen_window = nullptr;
+	}
+	n3ds_set_game_window(nullptr);
+}
+#endif
 
 int Image_window::VideoModeOK(int width, int height, bool fullscreen, int bpp) {
 	if (height > width) {

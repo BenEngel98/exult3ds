@@ -33,6 +33,9 @@
 #ifdef __GNUC__
 #	pragma GCC diagnostic pop
 #endif    // __GNUC__
+#ifdef __3DS__
+#	include "n3ds_kbd.h"
+#endif
 
 /*
  *  Delay between animations.
@@ -42,6 +45,12 @@
 #define DELAY_SINGLE_MS 1
 
 inline void Delay() {
+#ifdef __3DS__
+	// Select was pressed: move the game to the other screen before we go on.
+	if (n3ds_take_screen_swap_request()) {
+		n3ds_apply_screen();
+	}
+#endif
 	const Uint32 expiration = DELAY_TOTAL_MS + SDL_GetTicks();
 	for (;;) {
 		SDL_PumpEvents();

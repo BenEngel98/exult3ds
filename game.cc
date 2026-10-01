@@ -41,6 +41,9 @@
 #include "gamemgr/modmgr.h"
 #include "gamemgr/sigame.h"
 #include "gamewin.h"
+#ifdef __3DS__
+#	include "n3ds_kbd.h"
+#endif
 #include "istring.h"
 #include "items.h"
 #include "keys.h"
@@ -948,6 +951,9 @@ int wait_delay(int ms, int startcol, int ncol, int rotspd) {
 #ifdef __3DS__
 		// 3DS: static screens are only presented once; re-present while idle so
 		// the last frame reliably reaches the LCD (cheap: one 400x240 copy).
+		if (n3ds_take_screen_swap_request()) {
+			n3ds_apply_screen();
+		}
 		gwin->get_win()->show();
 #endif
 		if (abs(ncol) > 1 && ticks2 > last_rotate + rot_speed) {

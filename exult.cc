@@ -83,6 +83,8 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 #include <iomanip>
 #include <sstream>
 
@@ -95,6 +97,8 @@
 #include <SDL3/SDL_main.h>
 #ifdef __3DS__
 #	include <sys/stat.h>
+
+#	include "n3ds_kbd.h"
 #endif
 static const SDL_MouseID EXSDL_TOUCH_MOUSEID = SDL_TOUCH_MOUSEID;
 static const SDL_TouchID EXSDL_MOUSE_TOUCHID = SDL_MOUSE_TOUCHID;
@@ -802,13 +806,14 @@ bool Handle_device_connection_event(void* userdata, SDL_Event* event) {
 /*
  *  Nintendo 3DS: turn gamepad buttons into the keyboard shortcuts Exult
  *  already understands. The circle pad is handled natively as the left stick
- *  (walking); the touch screen acts as the mouse.
+ *  (walking); the touch screen acts as the mouse; the C-stick moves a mouse
+ *  cursor on the game screen.
  *
  *    D-pad     arrow keys (walk)        Start   Esc (close / game menu)
- *    A         Enter                    Select  T   (target mode)
- *    B         Esc (close gump)         L       C   (toggle combat)
+ *    A         left mouse button        Select  swap game between screens
+ *    B         right mouse button       L       C   (toggle combat)
  *    X         I   (inventory)          R       S   (save / restore)
- *    Y         Z   (stats)              ZL      F   (eat)   ZR  K (use keys)
+ *    Y         Esc (close gump)         ZL      F   (eat)   ZR  K (use keys)
  */
 static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
 	switch (b) {
@@ -842,6 +847,9 @@ static float      n3ds_cur_x   = 200.f;
 static float      n3ds_cur_y   = 120.f;
 static Uint32     n3ds_btn_state = 0;
 static SDL_Window* n3ds_game_window() {
+	if (SDL_Window* w = n3ds_get_game_window()) {
+		return w;
+	}
 	int          count   = 0;
 	SDL_Window** windows = SDL_GetWindows(&count);
 	SDL_Window*  w       = (windows && count > 0) ? windows[0] : nullptr;
@@ -945,6 +953,12 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 		n3ds_push_mouse_button(SDL_BUTTON_RIGHT, event->gbutton.down, event->gbutton.timestamp);
 		return true;
 	}
+	if (gb == SDL_GAMEPAD_BUTTON_BACK) {    // Select = move the game to the other screen
+		if (event->gbutton.down) {
+			n3ds_request_screen_swap();
+		}
+		return true;
+	}
 	const SDL_Keycode key = n3ds_button_key(gb);
 	if (key == SDLK_UNKNOWN) {
 		return true;
@@ -959,6 +973,12 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 	ev.key.repeat    = false;
 	SDL_PushEvent(&ev);
 	return true;
+}
+
+// Drops events that belong to the on-screen keyboard window.
+static bool SDLCALL n3ds_event_filter(void* userdata, SDL_Event* event) {
+	ignore_unused_variable_warning(userdata);
+	return !n3ds_kbd_handle_event(event);
 }
 #endif
 
@@ -1082,6 +1102,12 @@ static void Init() {
 	}
 
 	SDL_SetEventFilter(nullptr, nullptr);
+#ifdef __3DS__
+	// Touches on the bottom-screen keyboard must never reach the game.
+	SDL_SetEventFilter(n3ds_event_filter, nullptr);
+	n3ds_set_game_window(gwin->get_win()->get_screen_window());
+	n3ds_kbd_create();
+#endif
 	// Show the banner
 	game = nullptr;
 
@@ -3522,6 +3548,60 @@ void setup_video(
 		videoGump->set_fill_mode(fillmode);
 	}
 }
+
+#ifdef __3DS__
+/*
+ *  Nintendo 3DS: move the game between the top (400x240) and the bottom
+ *  touch (320x240) screen. The screen that is not showing the game gets the
+ *  touch keyboard (bottom) or a small info panel (top).
+ */
+static bool n3ds_in_apply_screen = false;
+
+void n3ds_apply_screen() {
+	if (n3ds_in_apply_screen || gwin == nullptr || gwin->get_win() == nullptr) {
+		return;
+	}
+	n3ds_in_apply_screen = true;
+	const bool bottom = n3ds_game_on_bottom();
+	const int  w      = bottom ? 320 : 400;
+	const int  h      = 240;
+	cout << "3DS: moving game to the " << (bottom ? "bottom" : "top") << " screen" << endl;
+	// Menus and the intro paint their screens once, so keep a copy of what is
+	// on screen now and put it back afterwards (centred / cropped).
+	std::vector<unsigned char> saved;
+	int                        sw = 0;
+	int                        sh = 0;
+	if (Image_buffer8* ib = gwin->get_win()->get_ib8(); ib != nullptr && ib->get_bits() != nullptr) {
+		sw             = ib->get_width();
+		sh             = ib->get_height();
+		const int slw  = ib->get_line_width();
+		const unsigned char* bits = ib->get_bits();
+		saved.resize(static_cast<size_t>(sw) * sh);
+		for (int y = 0; y < sh; y++) {
+			std::memcpy(&saved[static_cast<size_t>(y) * sw], bits + static_cast<size_t>(y) * slw, sw);
+		}
+	}
+	n3ds_kbd_destroy();
+	gwin->get_win()->n3ds_drop_window();
+	gwin->resized(w, h, true, w, h, 1, Image_window::point, Image_window::Fit, Image_window::point);
+	apply_ui_layer_config();
+	n3ds_kbd_create();
+	n3ds_cur_x = w / 2.f;
+	n3ds_cur_y = h / 2.f;
+	if (gwin->get_main_actor() != nullptr) {
+		// In game: resized() has already repainted the world.
+		gwin->set_all_dirty();
+		gwin->paint();
+	} else if (!saved.empty()) {
+		if (Image_buffer8* ib = gwin->get_win()->get_ib8()) {
+			ib->fill8(0);
+			ib->copy8(saved.data(), sw, sh, (w - sw) / 2, (h - sh) / 2);
+		}
+	}
+	gwin->get_win()->show();
+	n3ds_in_apply_screen = false;
+}
+#endif
 
 #ifdef USE_EXULTSTUDIO
 

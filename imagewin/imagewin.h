@@ -550,6 +550,12 @@ public:
 		return screen_window;
 	}
 
+#ifdef __3DS__
+	// Throw away the SDL window (and everything hanging off it) so that the
+	// next resized() creates a fresh one, possibly on the other screen.
+	void n3ds_drop_window();
+#endif
+
 	// Looks for the best resolution from the width x height and fullscreen :
 	// - A portrait requirement height > width can never be found,
 	// - In Windowed, only the Desktop resolution is suitable,
