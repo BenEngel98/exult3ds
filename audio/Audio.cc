@@ -446,6 +446,9 @@ sint32 Audio::play(std::unique_ptr<uint8[]> sound_data, uint32 len, bool wait, i
 		audio_sample->Release();
 		return id;
 	}
+#ifdef __3DS__
+	cout << "Audio::play: unrecognised sample format (" << len << " bytes)" << endl;
+#endif
 
 	return -1;
 }
@@ -494,7 +497,11 @@ sint32 Audio::playSpeechfile(const char* fname, const char* fpatch, bool wait, i
 		return -1;
 	}
 	volume           = (volume * speech_volume) / 100;
-	return speech_id = play(std::move(buf), len, wait, volume);
+	speech_id        = play(std::move(buf), len, wait, volume);
+#ifdef __3DS__
+	cout << "Speech file " << fname << ": " << len << " bytes, channel " << speech_id << ", volume " << volume << endl;
+#endif
+	return speech_id;
 }
 
 bool Audio::playing() {
@@ -562,10 +569,16 @@ bool Audio::start_speech(int num, bool wait) {
 	size_t len;
 	auto   buf = sample.retrieve(len);
 	if (!buf || len == 0) {
+#ifdef __3DS__
+		cout << "Speech " << num << ": could not read sample" << endl;
+#endif
 		return false;
 	}
 
 	speech_id = play(std::move(buf), len, wait, (speech_volume * 255) / 100);
+#ifdef __3DS__
+	cout << "Speech " << num << ": " << len << " bytes, channel " << speech_id << ", volume " << speech_volume << endl;
+#endif
 	return true;
 }
 

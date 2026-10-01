@@ -445,6 +445,7 @@ void AudioMixer::sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int l
 #ifdef __3DS__
 std::atomic<unsigned> n3ds_dbg_mix_calls{0};
 std::atomic<unsigned> n3ds_dbg_mix_peak{0};
+std::atomic<unsigned> n3ds_dbg_mix_channels{0};
 #endif
 
 void AudioMixer::MixAudio(sint16* stream, uint32 bytes) {
@@ -455,12 +456,21 @@ void AudioMixer::MixAudio(sint16* stream, uint32 bytes) {
 	if (midi) {
 		midi->produceSamples(stream, bytes);
 	}
+#ifdef __3DS__
+	unsigned active = 0;
+#endif
 	for (auto& channel : channels) {
 		if (channel.isPlaying()) {
 			channel.resampleAndMix(stream, bytes);
+#ifdef __3DS__
+			active++;
+#endif
 		}
 	}
 #ifdef __3DS__
+	if (active > n3ds_dbg_mix_channels.load(std::memory_order_relaxed)) {
+		n3ds_dbg_mix_channels.store(active, std::memory_order_relaxed);
+	}
 	n3ds_dbg_mix_calls.fetch_add(1, std::memory_order_relaxed);
 	unsigned peak = 0;
 	for (uint32 i = 0; i < bytes / 2; i += 16) {

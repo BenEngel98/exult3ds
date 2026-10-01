@@ -634,7 +634,16 @@ int exult_main(const char* runpath) {
 	config->value("config/disk/data_path", data_path, EXULT_DATADIR);
 	setup_data_dir(data_path, runpath);
 
+#ifdef __3DS__
+	// The data directory lives in read-only romfs; digital music (the Exult
+	// audio pack's .ogg files) can be dropped on the SD card instead.
+	std::string default_music = "sdmc:/3ds/exult/data/music";
+	if (!U7exists(default_music.c_str())) {
+		default_music = get_system_path("<DATA>/music");
+	}
+#else
 	const std::string default_music = get_system_path("<DATA>/music");
+#endif
 	config->value("config/disk/music_path", music_path, default_music.c_str());
 
 	add_system_path("<MUSIC>", music_path);
@@ -3615,6 +3624,7 @@ static bool n3ds_in_apply_screen = false;
 
 extern std::atomic<unsigned> n3ds_dbg_mix_calls;
 extern std::atomic<unsigned> n3ds_dbg_mix_peak;
+extern std::atomic<unsigned> n3ds_dbg_mix_channels;
 
 // Periodic audio statistics in the log (helps diagnosing silent hardware).
 void n3ds_debug_tick() {
@@ -3626,7 +3636,9 @@ void n3ds_debug_tick() {
 	last = now;
 	const unsigned calls = n3ds_dbg_mix_calls.exchange(0);
 	const unsigned peak  = n3ds_dbg_mix_peak.exchange(0);
-	std::cout << "3DS audio: " << calls << " mixer callbacks in 15 s, peak level " << peak << std::endl;
+	const unsigned chans = n3ds_dbg_mix_channels.exchange(0);
+	std::cout << "3DS audio: " << calls << " mixer callbacks in 15 s, peak level " << peak << ", max sample channels " << chans
+			  << std::endl;
 }
 
 
