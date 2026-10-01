@@ -531,8 +531,24 @@ int main(int argc, char* argv[]) {
 		}
 		result = e.get_errno();
 	}
-
+#ifdef __3DS__
+	catch (const std::exception& e) {
+		cerr << "============================" << endl
+			 << "Unhandled exception: " << e.what() << endl
+			 << "============================" << endl;
+		result = 1;
+	}
+	// SDL's start-up code unmounts romfs as soon as main() returns, but the
+	// static objects that still hold files open there are only destroyed
+	// afterwards (and crash closing them). Leaving through exit() runs the
+	// destructors first, while romfs is still mounted.
+	std::cout << "Exult 3DS: exiting with " << result << std::endl;
+	fflush(stdout);
+	fflush(stderr);
+	std::exit(result);
+#else
 	return result;
+#endif
 }
 
 /*
