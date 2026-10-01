@@ -81,6 +81,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
@@ -819,18 +820,12 @@ static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
 		return SDLK_LEFT;
 	case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
 		return SDLK_RIGHT;
-	case SDL_GAMEPAD_BUTTON_SOUTH:    // A on the 3DS (SDL swaps to Nintendo labels)
-		return SDLK_RETURN;
-	case SDL_GAMEPAD_BUTTON_EAST:    // B
-		return SDLK_ESCAPE;
 	case SDL_GAMEPAD_BUTTON_WEST:    // Y
-		return SDLK_Z;
+		return SDLK_ESCAPE;
 	case SDL_GAMEPAD_BUTTON_NORTH:    // X
 		return SDLK_I;
 	case SDL_GAMEPAD_BUTTON_START:
 		return SDLK_ESCAPE;
-	case SDL_GAMEPAD_BUTTON_BACK:    // Select
-		return SDLK_T;
 	case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
 		return SDLK_C;
 	case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
@@ -840,9 +835,87 @@ static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
 	}
 }
 
+// ---- C-stick driven mouse cursor; A / B = left / right mouse button ----
+static float      n3ds_stick_x = 0.f;
+static float      n3ds_stick_y = 0.f;
+static float      n3ds_cur_x   = 200.f;
+static float      n3ds_cur_y   = 120.f;
+static Uint32     n3ds_btn_state = 0;
+static SDL_Window* n3ds_game_window() {
+	int          count   = 0;
+	SDL_Window** windows = SDL_GetWindows(&count);
+	SDL_Window*  w       = (windows && count > 0) ? windows[0] : nullptr;
+	SDL_free(windows);
+	return w;
+}
+
+static void n3ds_push_mouse_motion(Uint64 ts) {
+	SDL_Window* w = n3ds_game_window();
+	SDL_Event   ev;
+	SDL_zero(ev);
+	ev.type             = SDL_EVENT_MOUSE_MOTION;
+	ev.motion.timestamp = ts;
+	ev.motion.windowID  = w ? SDL_GetWindowID(w) : 0;
+	ev.motion.which     = 0;    // "a real mouse" (not SDL_TOUCH_MOUSEID)
+	ev.motion.state     = n3ds_btn_state;
+	ev.motion.x         = n3ds_cur_x;
+	ev.motion.y         = n3ds_cur_y;
+	SDL_PushEvent(&ev);
+}
+
+static Uint32 SDLCALL n3ds_mouse_tick(void* userdata, SDL_TimerID id, Uint32 interval) {
+	ignore_unused_variable_warning(userdata, id);
+	const float dead = 0.18f;
+	float       ax   = n3ds_stick_x;
+	float       ay   = n3ds_stick_y;
+	const float mag  = std::sqrt(ax * ax + ay * ay);
+	if (mag < dead) {
+		return interval;
+	}
+	// Scale past the dead zone and give it a gentle curve for fine control.
+	const float speed = (mag - dead) / (1.f - dead);
+	const float px    = (speed * speed * 9.f + 1.f) * (ax / mag);    // pixels per tick
+	const float py    = (speed * speed * 9.f + 1.f) * (ay / mag);
+	int         ww    = 400;
+	int         wh    = 240;
+	if (SDL_Window* w = n3ds_game_window()) {
+		SDL_GetWindowSize(w, &ww, &wh);
+	}
+	n3ds_cur_x = std::clamp(n3ds_cur_x + px, 0.f, static_cast<float>(ww - 1));
+	n3ds_cur_y = std::clamp(n3ds_cur_y + py, 0.f, static_cast<float>(wh - 1));
+	n3ds_push_mouse_motion(SDL_GetTicksNS());
+	return interval;
+}
+
+static void n3ds_push_mouse_button(Uint8 button, bool down, Uint64 ts) {
+	SDL_Window* w = n3ds_game_window();
+	SDL_Event   ev;
+	SDL_zero(ev);
+	ev.type             = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+	ev.button.timestamp = ts;
+	ev.button.windowID  = w ? SDL_GetWindowID(w) : 0;
+	ev.button.which     = 0;
+	ev.button.button    = button;
+	ev.button.down      = down;
+	ev.button.clicks    = 1;
+	ev.button.x         = n3ds_cur_x;
+	ev.button.y         = n3ds_cur_y;
+	const Uint32 mask   = SDL_BUTTON_MASK(button);
+	n3ds_btn_state      = down ? (n3ds_btn_state | mask) : (n3ds_btn_state & ~mask);
+	SDL_PushEvent(&ev);
+}
+
 static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 	ignore_unused_variable_warning(userdata);
 	if (event->type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event->type != SDL_EVENT_GAMEPAD_BUTTON_UP) {
+		if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION && event->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHTX) {
+			n3ds_stick_x = event->gaxis.value / 32767.f;
+			return true;
+		}
+		if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION && event->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHTY) {
+			n3ds_stick_y = event->gaxis.value / 32767.f;
+			return true;
+		}
 		if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION
 			&& (event->gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || event->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)) {
 			// ZL / ZR arrive as triggers: treat as digital keys.
@@ -863,7 +936,16 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 		}
 		return true;
 	}
-	const SDL_Keycode key = n3ds_button_key(static_cast<SDL_GamepadButton>(event->gbutton.button));
+	const SDL_GamepadButton gb = static_cast<SDL_GamepadButton>(event->gbutton.button);
+	if (gb == SDL_GAMEPAD_BUTTON_SOUTH) {    // A = left mouse button
+		n3ds_push_mouse_button(SDL_BUTTON_LEFT, event->gbutton.down, event->gbutton.timestamp);
+		return true;
+	}
+	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // B = right mouse button
+		n3ds_push_mouse_button(SDL_BUTTON_RIGHT, event->gbutton.down, event->gbutton.timestamp);
+		return true;
+	}
+	const SDL_Keycode key = n3ds_button_key(gb);
 	if (key == SDLK_UNKNOWN) {
 		return true;
 	}
@@ -942,6 +1024,7 @@ static void Init() {
 	SDL_AddEventWatch(Handle_device_connection_event, nullptr);
 #ifdef __3DS__
 	SDL_AddEventWatch(n3ds_gamepad_watch, nullptr);
+	SDL_AddTimer(16, n3ds_mouse_tick, nullptr);
 #endif
 
 	// Load games and mods; also stores system paths:
