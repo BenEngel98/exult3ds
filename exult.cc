@@ -98,6 +98,8 @@
 #ifdef __3DS__
 #	include <sys/stat.h>
 
+#	include "n3ds_fs.h"
+#	include "n3ds_file.h"
 #	include "n3ds_kbd.h"
 #endif
 static const SDL_MouseID EXSDL_TOUCH_MOUSEID = SDL_TOUCH_MOUSEID;
@@ -279,6 +281,7 @@ int main(int argc, char* argv[]) {
 	std::cout << "Exult 3DS: main() entered" << std::endl;
 	std::cout << "Exult 3DS: heap " << (__ctru_heap_size >> 20) << " MB, linear " << (__ctru_linear_heap_size >> 20)
 			  << " MB, stack " << (__stacksize__ >> 20) << " MB" << std::endl;
+	n3ds_fs_report("start");
 #endif
 	bool needhelp    = false;
 	bool showversion = false;
@@ -289,19 +292,37 @@ int main(int argc, char* argv[]) {
 	// cross-platform support.  Standalone utilities continue to default
 	// to the default std::fstream-based file I/O to avoid taking an SDL
 	// dependency.
+#ifdef __3DS__
+	// Read files whole and close them at once: the 3DS allows only a few
+	// open files at a time (see n3ds_fs.cc).
+	U7set_istream_factory(n3ds_open_in);
+#else
 	U7set_istream_factory([](const char* s, std::ios_base::openmode mode) -> std::unique_ptr<std::istream> {
+#ifdef __3DS__
+		// Keep the number of open SD card files small: see n3ds_file.cc.
+		if (auto mem = n3ds_open_in_memory(s, mode, 2 * 1024 * 1024)) {
+			return mem;
+		}
+#endif
 		auto file = std::make_unique<std::ifstream>(s, mode);
 		if (file->good()) {
 			return file;
 		}
 		return std::make_unique<SdlRwopsIstream>(s, mode);
 	});
+#endif
 	U7set_ostream_factory([](const char* s, std::ios_base::openmode mode) -> std::unique_ptr<std::ostream> {
 		auto file = std::make_unique<std::ofstream>(s, mode);
 		if (file->good()) {
 			return file;
 		}
+#ifdef __3DS__
+		std::cerr << "3DS: cannot write " << s << ": " << std::strerror(errno) << " (errno " << errno << ")" << std::endl;
+		n3ds_fs_report("write failure");
+		return nullptr;
+#else
 		return std::make_unique<SdlRwopsOstream>(s, mode);
+#endif
 	});
 #ifdef SDL_PLATFORM_IOS
 	const char* launchFlag = iOS_GetLaunchGameFlag();

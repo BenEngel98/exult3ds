@@ -262,6 +262,13 @@ static bool base_to_uppercase(string& str, int count) {
 	// Go backwards.
 	string::reverse_iterator X;
 	for (X = str.rbegin(); X != str.rend(); ++X) {
+#ifdef __3DS__
+		// Never touch the device prefix ("sdmc:", "romfs:"): the device
+		// names are case sensitive and "SDMC:" does not exist.
+		if (*X == ':') {
+			return false;
+		}
+#endif
 		// Stop at separator.
 		if (*X == '/' || *X == '\\' || *X == ':') {
 			todo--;

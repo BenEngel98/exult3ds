@@ -29,6 +29,9 @@
 #endif
 
 #include "gamewin.h"
+#ifdef __3DS__
+#	include "n3ds_fs.h"
+#endif
 
 #include "Astar.h"
 #include "Audio.h"
@@ -1370,6 +1373,9 @@ bool Game_window::init_gamedat(bool create) {
 	// Create gamedat files 1st time.
 	if (create) {
 		cout << "Creating 'gamedat' files." << endl;
+#ifdef __3DS__
+		n3ds_fs_report("before gamedat");
+#endif
 		if (is_system_path_defined("<PATCH>") && U7exists(PATCH_INITGAME)) {
 			restore_gamedat(PATCH_INITGAME);
 		} else {
@@ -1392,6 +1398,9 @@ bool Game_window::init_gamedat(bool create) {
 		if (out) {
 			getVersionInfo(*out);
 		}
+#ifdef __3DS__
+		n3ds_fs_report("after gamedat");
+#endif
 	}
 	//++++Maybe just test for IDENTITY+++:
 	else if ((U7exists(U7NBUF_DAT) || !U7exists(NPC_DAT)) && !Game::is_editing()) {
