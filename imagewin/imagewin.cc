@@ -766,8 +766,12 @@ bool Image_window::create_scale_surfaces(int w, int h, int bpp) {
 	// Scale using 'fill_scaler' only
 	if (scaler == fill_scaler || scale == 1 || (fill_scaler == SDLScaler && (scaler == point || scaler == bilinear))) {
 		// Use nearest scale mode if the scaler is point otherwise use linear
+#ifdef __3DS__
+		SDL_SetTextureScaleMode(screen_texture_a, SDL_SCALEMODE_NEAREST);
+#else
 		SDL_SetTextureScaleMode(
 				screen_texture_a, (fill_scaler == SDLScaler && scaler == point) ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+#endif
 		inter_surface = draw_surface;
 	} else if (inter_width != w || inter_height != h) {
 		int i_width  = inter_width + 2 * scale * guard_band;
@@ -2149,8 +2153,14 @@ void Image_window::composite_layers() {
 
 		const UiLayerConfig& cfg = get_ui_cfg(layer.ui_kind);
 		// Match filtering to this layer's scaler/fill scaler.
+#ifdef __3DS__
+		// Software renderer only: bilinear stretching of every layer each frame
+		// is far too slow, so only filter when explicitly asked for.
+		const bool smooth = (eff_ui_scaler(cfg) == bilinear) || (eff_ui_fill_scaler(cfg) == bilinear);
+#else
 		const bool smooth = (eff_ui_scaler(cfg) == bilinear) || (eff_ui_scaler(cfg) == SDLScaler)
 							|| (eff_ui_fill_scaler(cfg) == bilinear) || (eff_ui_fill_scaler(cfg) == SDLScaler);
+#endif
 		const SDL_ScaleMode smode = smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST;
 		// If a software (member) scaler is active, layers are pre-scaled by it
 		// to this factor; otherwise they are uploaded 1:1 and scaled on the GPU.
@@ -2244,7 +2254,7 @@ void Image_window::UpdateRect(SDL_FRect* dirtyRect, SDL_FRect* fullRect, bool fo
 			SDL_ClearError();
 		}
 #ifdef __3DS__
-		// Keep the other screen (touch keyboard / info panel) fresh too.
+		// Keep the other screen (touch keyboard / mirror of the game) fresh too.
 		n3ds_kbd_present();
 #endif
 	}

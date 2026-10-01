@@ -63,6 +63,9 @@ Image_window8::Image_window8(
 		Image_window::FillMode fillmode, unsigned int fillsclr)
 		: Image_window(new Image_buffer8(0, 0, nullptr), w, h, gwidth, gheight, scl, fs, sclr, fillmode, fillsclr) {
 	ib8 = static_cast<Image_buffer8*>(ibuf);
+#ifdef __3DS__
+	main_ib8 = ib8;
+#endif
 }
 
 void Image_window8::get_gamma(double& r, double& g, double& b) {

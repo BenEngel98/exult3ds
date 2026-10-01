@@ -1,5 +1,7 @@
 /*
- *  n3ds_kbd.cc - On-screen keyboard on the Nintendo 3DS bottom screen.
+ *  n3ds_kbd.cc - The Nintendo 3DS "other" screen: a touch keyboard on the
+ *  bottom screen, or a mirror of the game on the top screen after Select has
+ *  moved the game down to the touch screen.
  *
  *  Copyright (C) 2026  The Exult Team
  *
@@ -87,28 +89,6 @@ namespace {
 		return nullptr;
 	}
 
-	// Draw text with the bitmap font, scale = pixel size of one font pixel.
-	void draw_text(SDL_Renderer* r, int x, int y, const char* text, int scale) {
-		for (const char* p = text; *p; ++p) {
-			if (const Glyph* g = find_glyph(*p)) {
-				for (int row = 0; row < 7; row++) {
-					for (int col = 0; col < 5; col++) {
-						if (g->rows[row][col] == '#') {
-							SDL_FRect px = {static_cast<float>(x + col * scale), static_cast<float>(y + row * scale),
-											static_cast<float>(scale), static_cast<float>(scale)};
-							SDL_RenderFillRect(r, &px);
-						}
-					}
-				}
-			}
-			x += 6 * scale;
-		}
-	}
-
-	int text_width(const char* text, int scale) {
-		return static_cast<int>(std::strlen(text)) * 6 * scale - scale;
-	}
-
 	// ---------------------------------------------------------------------
 	// Keyboard layout
 	// ---------------------------------------------------------------------
@@ -175,17 +155,47 @@ namespace {
 	// ---------------------------------------------------------------------
 	// State
 	// ---------------------------------------------------------------------
-	SDL_Window*   kbd_window   = nullptr;
-	SDL_Renderer* kbd_renderer = nullptr;
-	SDL_WindowID  kbd_id       = 0;
-	SDL_Window*   game_window  = nullptr;
-	bool          shifted      = false;
-	int           pressed_key  = -1;
-	bool          dirty        = true;
-	Uint64        last_present = 0;
-	bool          on_bottom    = false;
-	bool          swap_request = false;
-	bool          aux_is_info  = false;    // true: the aux window is the top-screen info panel
+	SDL_Window*  aux_window    = nullptr;
+	SDL_WindowID aux_id        = 0;
+	SDL_Window*  game_window   = nullptr;
+	bool         shifted       = false;
+	int          pressed_key   = -1;
+	bool         dirty         = true;
+	Uint64       last_present  = 0;
+	bool         on_bottom     = false;
+	bool         swap_request  = false;
+	bool         aux_is_mirror = false;    // true: the aux window (top screen) mirrors the game
+	bool         text_wanted   = false;
+
+	// ---------------------------------------------------------------------
+	// Drawing helpers: the aux screen is a plain SDL window surface.
+	// ---------------------------------------------------------------------
+	void fill_rect(SDL_Surface* s, int x, int y, int w, int h, Uint8 r, Uint8 g, Uint8 b) {
+		const SDL_Rect rc = {x, y, w, h};
+		SDL_FillSurfaceRect(s, &rc, SDL_MapSurfaceRGB(s, r, g, b));
+	}
+
+	// Draw text with the bitmap font, scale = pixel size of one font pixel.
+	void draw_text(SDL_Surface* s, int x, int y, const char* text, int scale, Uint8 r, Uint8 g, Uint8 b) {
+		const Uint32 col = SDL_MapSurfaceRGB(s, r, g, b);
+		for (const char* p = text; *p; ++p) {
+			if (const Glyph* gl = find_glyph(*p)) {
+				for (int row = 0; row < 7; row++) {
+					for (int c = 0; c < 5; c++) {
+						if (gl->rows[row][c] == '#') {
+							const SDL_Rect px = {x + c * scale, y + row * scale, scale, scale};
+							SDL_FillSurfaceRect(s, &px, col);
+						}
+					}
+				}
+			}
+			x += 6 * scale;
+		}
+	}
+
+	int text_width(const char* text, int scale) {
+		return static_cast<int>(std::strlen(text)) * 6 * scale - scale;
+	}
 
 	int key_at(float px, float py) {
 		for (size_t i = 0; i < keys.size(); i++) {
@@ -210,7 +220,7 @@ namespace {
 		ev.key.repeat    = false;
 		SDL_PushEvent(&ev);
 
-		if (down && k.text && game_window && SDL_TextInputActive(game_window)) {
+		if (down && k.text && game_window && (text_wanted || SDL_TextInputActive(game_window))) {
 			// Typing into a text field (character name, save name...).
 			static char bufs[16][2];
 			static int  n   = 0;
@@ -228,55 +238,45 @@ namespace {
 		}
 	}
 
-	void draw_info() {
-		SDL_SetRenderDrawColor(kbd_renderer, 10, 10, 18, 255);
-		SDL_RenderClear(kbd_renderer);
-		const char* lines[] = {"EXULT", "", "THE GAME IS ON THE", "BOTTOM SCREEN", "", "PRESS SELECT", "TO SWAP BACK"};
-		int         y       = 60;
-		for (const char* l : lines) {
-			const int scale = (y == 60) ? 3 : 2;
-			const int tw    = text_width(l, scale);
-			SDL_SetRenderDrawColor(kbd_renderer, 200, 210, 240, 255);
-			draw_text(kbd_renderer, (400 - tw) / 2, y, l, scale);
-			y += 7 * scale + 6;
-		}
-		SDL_RenderPresent(kbd_renderer);
-	}
-
-	void draw() {
-		if (!kbd_renderer) {
-			return;
-		}
-		if (aux_is_info) {
-			draw_info();
-			return;
-		}
-		SDL_SetRenderDrawColor(kbd_renderer, 24, 22, 34, 255);
-		SDL_RenderClear(kbd_renderer);
+	void draw_keyboard(SDL_Surface* s) {
+		fill_rect(s, 0, 0, s->w, s->h, 24, 22, 34);
 		for (size_t i = 0; i < keys.size(); i++) {
 			const Key& k       = keys[i];
 			const bool pressed = static_cast<int>(i) == pressed_key || (k.is_shift && shifted);
-			SDL_FRect  rc      = {static_cast<float>(k.x), static_cast<float>(k.y), static_cast<float>(k.w),
-								  static_cast<float>(k.h)};
+			fill_rect(s, k.x, k.y, k.w, k.h, 110, 108, 128);    // border
 			if (pressed) {
-				SDL_SetRenderDrawColor(kbd_renderer, 120, 150, 230, 255);
+				fill_rect(s, k.x + 1, k.y + 1, k.w - 2, k.h - 2, 120, 150, 230);
 			} else {
-				SDL_SetRenderDrawColor(kbd_renderer, 72, 70, 88, 255);
+				fill_rect(s, k.x + 1, k.y + 1, k.w - 2, k.h - 2, 72, 70, 88);
 			}
-			SDL_RenderFillRect(kbd_renderer, &rc);
-			SDL_SetRenderDrawColor(kbd_renderer, 110, 108, 128, 255);
-			SDL_RenderRect(kbd_renderer, &rc);
-			// label
-			const int   scale = (std::strlen(k.label) == 1) ? 2 : 1;
-			const int   tw    = text_width(k.label, scale);
-			const int   th    = 7 * scale;
-			SDL_SetRenderDrawColor(kbd_renderer, 235, 235, 245, 255);
-			draw_text(kbd_renderer, k.x + (k.w - tw) / 2, k.y + (k.h - th) / 2, k.label, scale);
+			const int scale = (std::strlen(k.label) == 1) ? 2 : 1;
+			const int tw    = text_width(k.label, scale);
+			const int th    = 7 * scale;
+			draw_text(s, k.x + (k.w - tw) / 2, k.y + (k.h - th) / 2, k.label, scale, 235, 235, 245);
 		}
-		SDL_RenderPresent(kbd_renderer);
+	}
+
+	// Copy the game's latest frame (bottom screen, 320x240) to the middle of
+	// the top screen (400x240), 1:1.
+	void draw_mirror(SDL_Surface* s) {
+		SDL_Surface* gs = game_window ? SDL_GetWindowSurface(game_window) : nullptr;
+		if (gs == nullptr) {
+			fill_rect(s, 0, 0, s->w, s->h, 0, 0, 0);
+			return;
+		}
+		SDL_Rect dst = {(s->w - gs->w) / 2, (s->h - gs->h) / 2, gs->w, gs->h};
+		SDL_BlitSurface(gs, nullptr, s, &dst);
 	}
 
 }    // namespace
+
+void n3ds_set_text_wanted(bool on) {
+	text_wanted = on;
+}
+
+bool n3ds_text_wanted() {
+	return text_wanted;
+}
 
 void n3ds_set_game_window(SDL_Window* w) {
 	game_window = w;
@@ -304,11 +304,11 @@ bool n3ds_take_screen_swap_request() {
 }
 
 bool n3ds_kbd_exists() {
-	return kbd_window != nullptr;
+	return aux_window != nullptr;
 }
 
 void n3ds_kbd_create() {
-	if (kbd_window) {
+	if (aux_window) {
 		return;
 	}
 	build_layout();
@@ -317,27 +317,31 @@ void n3ds_kbd_create() {
 	SDL_DisplayID  top      = (displays && count > 0) ? displays[0] : 0;
 	SDL_DisplayID  bottom   = (displays && count > 1) ? displays[1] : 0;
 	SDL_free(displays);
-	// Game on top -> keyboard on the bottom screen; game on bottom -> info panel on top.
-	aux_is_info                = on_bottom;
-	const SDL_DisplayID target = aux_is_info ? top : bottom;
-	const int           aw     = aux_is_info ? 400 : 320;
+	// Game on top -> keyboard on the bottom screen; game on bottom -> the top
+	// screen mirrors the game.
+	aux_is_mirror              = on_bottom;
+	const SDL_DisplayID target = aux_is_mirror ? top : bottom;
+	const int           aw     = aux_is_mirror ? 400 : 320;
 	if (!target) {
 		return;
 	}
 	SDL_PropertiesID props = SDL_CreateProperties();
-	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, aux_is_info ? "info" : "keyboard");
+	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, aux_is_mirror ? "mirror" : "keyboard");
 	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(target));
 	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(target));
 	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, aw);
 	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 240);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
-	kbd_window = SDL_CreateWindowWithProperties(props);
+	aux_window = SDL_CreateWindowWithProperties(props);
 	SDL_DestroyProperties(props);
-	if (!kbd_window) {
+	if (!aux_window) {
 		return;
 	}
-	kbd_id       = SDL_GetWindowID(kbd_window);
-	kbd_renderer = SDL_CreateRenderer(kbd_window, nullptr);
+	aux_id = SDL_GetWindowID(aux_window);
+	if (SDL_Surface* s = SDL_GetWindowSurface(aux_window)) {
+		fill_rect(s, 0, 0, s->w, s->h, 0, 0, 0);
+		SDL_UpdateWindowSurface(aux_window);
+	}
 	// Keep keyboard focus on the game window: the keyboard is touch only.
 	if (game_window) {
 		SDL_RaiseWindow(game_window);
@@ -346,25 +350,32 @@ void n3ds_kbd_create() {
 }
 
 void n3ds_kbd_destroy() {
-	if (kbd_renderer) {
-		SDL_DestroyRenderer(kbd_renderer);
-		kbd_renderer = nullptr;
+	if (aux_window) {
+		SDL_DestroyWindow(aux_window);
+		aux_window = nullptr;
 	}
-	if (kbd_window) {
-		SDL_DestroyWindow(kbd_window);
-		kbd_window = nullptr;
-	}
-	kbd_id      = 0;
+	aux_id      = 0;
 	pressed_key = -1;
 }
 
 void n3ds_kbd_present() {
-	if (!kbd_window) {
+	if (!aux_window) {
+		return;
+	}
+	SDL_Surface* s = SDL_GetWindowSurface(aux_window);
+	if (s == nullptr) {
+		return;
+	}
+	if (aux_is_mirror) {
+		// Called right after each game present: copy the new frame up.
+		draw_mirror(s);
+		SDL_UpdateWindowSurface(aux_window);
 		return;
 	}
 	const Uint64 now = SDL_GetTicks();
 	if (dirty || now - last_present > 500) {
-		draw();
+		draw_keyboard(s);
+		SDL_UpdateWindowSurface(aux_window);
 		dirty        = false;
 		last_present = now;
 	}
@@ -373,17 +384,17 @@ void n3ds_kbd_present() {
 bool n3ds_kbd_handle_event(SDL_Event* event) {
 	// A handheld never really loses focus; SDL hands the focus to whichever
 	// window was created last, which would pause the game whenever the
-	// keyboard / info window appears.
+	// keyboard / mirror window appears.
 	if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
 		return true;
 	}
-	if (!kbd_window) {
+	if (!aux_window) {
 		return false;
 	}
 	if (event->type >= SDL_EVENT_WINDOW_FIRST && event->type <= SDL_EVENT_WINDOW_LAST) {
-		return event->window.windowID == kbd_id;
+		return event->window.windowID == aux_id;
 	}
-	if (aux_is_info) {
+	if (aux_is_mirror) {
 		return false;
 	}
 	switch (event->type) {
@@ -391,7 +402,7 @@ bool n3ds_kbd_handle_event(SDL_Event* event) {
 	case SDL_EVENT_FINGER_UP:
 	case SDL_EVENT_FINGER_MOTION:
 	case SDL_EVENT_FINGER_CANCELED: {
-		if (event->tfinger.windowID != kbd_id) {
+		if (event->tfinger.windowID != aux_id) {
 			return false;
 		}
 		const float px = event->tfinger.x * 320.f;
@@ -421,7 +432,7 @@ bool n3ds_kbd_handle_event(SDL_Event* event) {
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
 	case SDL_EVENT_MOUSE_BUTTON_UP:
 		// Mouse events synthesised from touches on the keyboard window.
-		return (event->type == SDL_EVENT_MOUSE_MOTION ? event->motion.windowID : event->button.windowID) == kbd_id;
+		return (event->type == SDL_EVENT_MOUSE_MOTION ? event->motion.windowID : event->button.windowID) == aux_id;
 	default:
 		return false;
 	}

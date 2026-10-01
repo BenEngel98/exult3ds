@@ -42,6 +42,9 @@ class GammaTable;
 class Image_window8 : public Image_window {
 	unsigned char  colors[768];    // Palette.
 	Image_buffer8* ib8;            // Cast to 8-bit buffer.
+#ifdef __3DS__
+	Image_buffer8* main_ib8 = nullptr;    // The window's own buffer (not a redirect).
+#endif
 
 	static GammaTable<unsigned char> GammaRed;
 	static GammaTable<unsigned char> GammaGreen;
@@ -70,6 +73,14 @@ public:
 	Image_buffer8* get_render_buffer() const {
 		return ib8;
 	}
+
+#ifdef __3DS__
+	// The buffer that belongs to the window itself, even while drawing is
+	// redirected to a layer (needed to re-create the window mid-scene).
+	Image_buffer8* get_main_buffer() const {
+		return main_ib8;
+	}
+#endif
 
 	// Set palette.
 	void set_palette(const unsigned char* rgbs, int maxval, int brightness = 100) override;

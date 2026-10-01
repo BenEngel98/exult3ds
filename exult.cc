@@ -944,12 +944,14 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 		}
 		return true;
 	}
+	// SDL names the face buttons by position: on the 3DS the right-hand button
+	// (A) is EAST and the bottom one (B) is SOUTH.
 	const SDL_GamepadButton gb = static_cast<SDL_GamepadButton>(event->gbutton.button);
-	if (gb == SDL_GAMEPAD_BUTTON_SOUTH) {    // A = left mouse button
+	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // A = left mouse button
 		n3ds_push_mouse_button(SDL_BUTTON_LEFT, event->gbutton.down, event->gbutton.timestamp);
 		return true;
 	}
-	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // B = right mouse button
+	if (gb == SDL_GAMEPAD_BUTTON_SOUTH) {    // B = right mouse button
 		n3ds_push_mouse_button(SDL_BUTTON_RIGHT, event->gbutton.down, event->gbutton.timestamp);
 		return true;
 	}
@@ -3299,10 +3301,19 @@ static void apply_ui_layer_config() {
 	};
 
 	LayerUiCfg global_cfg;
-	global_cfg.width  = 420;
-	global_cfg.height = 263;
-	config->value("config/video/ui/width", global_cfg.width, 420);
-	config->value("config/video/ui/height", global_cfg.height, 263);
+#ifdef __3DS__
+	// 3DS: UI layers at the game area's own size (0x0 = auto) so they are
+	// blitted 1:1 instead of being rescaled by the software renderer.
+	constexpr int default_ui_w = 0;
+	constexpr int default_ui_h = 0;
+#else
+	constexpr int default_ui_w = 420;
+	constexpr int default_ui_h = 263;
+#endif
+	global_cfg.width  = default_ui_w;
+	global_cfg.height = default_ui_h;
+	config->value("config/video/ui/width", global_cfg.width, default_ui_w);
+	config->value("config/video/ui/height", global_cfg.height, default_ui_h);
 	normalize_dims(global_cfg.width, global_cfg.height);
 	{
 		string s;
@@ -3553,9 +3564,10 @@ void setup_video(
 /*
  *  Nintendo 3DS: move the game between the top (400x240) and the bottom
  *  touch (320x240) screen. The screen that is not showing the game gets the
- *  touch keyboard (bottom) or a small info panel (top).
+ *  touch keyboard (bottom) or a mirror of the game (top).
  */
 static bool n3ds_in_apply_screen = false;
+
 
 void n3ds_apply_screen() {
 	if (n3ds_in_apply_screen || gwin == nullptr || gwin->get_win() == nullptr) {
@@ -3582,8 +3594,20 @@ void n3ds_apply_screen() {
 		}
 	}
 	n3ds_kbd_destroy();
-	gwin->get_win()->n3ds_drop_window();
+	// Menus, the intro etc. redirect drawing to a scene layer. The window must
+	// be re-created with its *own* buffer current, otherwise create_surface()
+	// would rewrite the layer's buffer descriptor and leave the real one
+	// pointing at freed memory.
+	Image_window8* win       = gwin->get_win();
+	Image_buffer8* redirect  = nullptr;
+	if (win->get_render_buffer() != win->get_main_buffer()) {
+		redirect = win->set_render_buffer(win->get_main_buffer());
+	}
+	win->n3ds_drop_window();
 	gwin->resized(w, h, true, w, h, 1, Image_window::point, Image_window::Fit, Image_window::point);
+	// The clip rectangle still describes the old screen size; reset it before
+	// drawing anything into the new buffer.
+	win->clear_clip();
 	apply_ui_layer_config();
 	n3ds_kbd_create();
 	n3ds_cur_x = w / 2.f;
@@ -3592,13 +3616,20 @@ void n3ds_apply_screen() {
 		// In game: resized() has already repainted the world.
 		gwin->set_all_dirty();
 		gwin->paint();
-	} else if (!saved.empty()) {
-		if (Image_buffer8* ib = gwin->get_win()->get_ib8()) {
+	} else if (!saved.empty() && redirect == nullptr) {
+		// A plain (non-scene) static screen: put the old pixels back.
+		if (Image_buffer8* ib = win->get_ib8()) {
 			ib->fill8(0);
 			ib->copy8(saved.data(), sw, sh, (w - sw) / 2, (h - sh) / 2);
 		}
 	}
-	gwin->get_win()->show();
+	if (redirect != nullptr) {
+		// Back to drawing into the scene layer; it is re-uploaded on show().
+		win->set_render_buffer(redirect);
+		Shape_frame::set_to_render(redirect);
+		win->mark_all_layers_dirty();
+	}
+	win->show();
 	n3ds_in_apply_screen = false;
 }
 #endif

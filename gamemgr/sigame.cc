@@ -33,6 +33,9 @@
 #include "flic/playfli.h"
 #include "font.h"
 #include "gamewin.h"
+#ifdef __3DS__
+#	include "n3ds_kbd.h"
+#endif
 #include "gump_utils.h"
 #include "ignore_unused_variable_warning.h"
 #include "istring.h"
@@ -1407,7 +1410,13 @@ bool SI_Game::new_game(Vga_file& shapes) {
 			SDL_SetHint(SDL_HINT_RETURN_KEY_HIDES_IME, "1");
 			TouchUI::startTextInput(window);
 		} else {
+#ifdef __3DS__
+			// The touch keyboard on the bottom screen types the name; the
+			// system keyboard applet is not used.
+			n3ds_set_text_wanted(true);
+#else
 			SDL_StartTextInput(window);
+#endif
 		}
 	}
 	do {
@@ -1606,10 +1615,17 @@ bool SI_Game::new_game(Vga_file& shapes) {
 			}
 		}
 	} while (editing);
+#ifdef __3DS__
+	// Select may have moved the game to the other screen (new SDL window).
+	window = gwin->get_win()->get_screen_window();
+#endif
 	if (SDL_TextInputActive(window)) {
 		SDL_StopTextInput(window);
 	}
 	SDL_SetHint(SDL_HINT_RETURN_KEY_HIDES_IME, "0");
+#ifdef __3DS__
+	n3ds_set_text_wanted(false);
+#endif
 	// Hide mouse on way out to clear the mouse's dirty box
 	if (Mouse::mouse()) {
 		Mouse::mouse()->hide();
