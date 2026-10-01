@@ -47,7 +47,7 @@ using std::cout;
 using std::endl;
 using std::string;
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(__3DS__)
 inline char* formatTicks() {
 	static char formattedTicks[32];
 	uint64      ticks = SDL_GetTicks();
@@ -149,7 +149,7 @@ bool MyMidiPlayer::start_music(int num, bool repeat, ForceType force, std::strin
 		return false;
 	}
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(__3DS__)
 	cout << formatTicks() << "Audio subsystem request: MIDI Music track # " << num << " in flex " << flex << endl;
 #endif
 
@@ -238,7 +238,7 @@ bool MyMidiPlayer::start_music(std::string fname, int num, bool repeat, ForceTyp
 	current_track = -1;
 	repeating     = repeat;
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(__3DS__)
 	cout << formatTicks() << "Audio subsystem request: MIDI Music track # " << num << " in file " << fname << endl;
 #endif
 

@@ -48,6 +48,7 @@ bool n3ds_take_screen_swap_request();
 // Re-create the game window on the screen chosen by n3ds_game_on_bottom()
 // and the keyboard / mirror on the other one (defined in exult.cc).
 void n3ds_apply_screen();
+void n3ds_debug_tick();
 
 #endif    // __3DS__
 #endif    // N3DS_KBD_H

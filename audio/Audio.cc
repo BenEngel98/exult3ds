@@ -297,7 +297,13 @@ bool Audio::can_sfx(const std::string& file, std::string* out) {
 	if (file.empty()) {
 		return false;
 	}
+#ifdef __3DS__
+	// The data directory is read-only (romfs), so also look next to the
+	// program on the SD card for the downloadable sound effects packs.
+	string options[] = {"", "<BUNDLE>", "<DATA>", "sdmc:/3ds/exult/data", "sdmc:/3ds/exult"};
+#else
 	string options[] = {"", "<BUNDLE>", "<DATA>"};
+#endif
 	for (auto& d : options) {
 		string f;
 		if (!d.empty()) {

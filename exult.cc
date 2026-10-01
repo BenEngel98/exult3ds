@@ -85,6 +85,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <atomic>
 #include <iomanip>
 #include <sstream>
 
@@ -3611,6 +3612,22 @@ void setup_video(
  *  touch keyboard (bottom) or a mirror of the game (top).
  */
 static bool n3ds_in_apply_screen = false;
+
+extern std::atomic<unsigned> n3ds_dbg_mix_calls;
+extern std::atomic<unsigned> n3ds_dbg_mix_peak;
+
+// Periodic audio statistics in the log (helps diagnosing silent hardware).
+void n3ds_debug_tick() {
+	static Uint32 last = 0;
+	const Uint32  now  = SDL_GetTicks();
+	if (now - last < 15000) {
+		return;
+	}
+	last = now;
+	const unsigned calls = n3ds_dbg_mix_calls.exchange(0);
+	const unsigned peak  = n3ds_dbg_mix_peak.exchange(0);
+	std::cout << "3DS audio: " << calls << " mixer callbacks in 15 s, peak level " << peak << std::endl;
+}
 
 
 void n3ds_apply_screen() {

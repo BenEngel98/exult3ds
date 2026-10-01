@@ -50,6 +50,7 @@ inline void Delay() {
 	if (n3ds_take_screen_swap_request()) {
 		n3ds_apply_screen();
 	}
+	n3ds_debug_tick();
 #endif
 	const Uint32 expiration = DELAY_TOTAL_MS + SDL_GetTicks();
 	for (;;) {

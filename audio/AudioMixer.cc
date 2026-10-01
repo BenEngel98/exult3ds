@@ -20,6 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "AudioMixer.h"
 
+#include <atomic>
+
 #include "AudioChannel.h"
 #include "Configuration.h"
 #include "Midi.h"
@@ -440,6 +442,11 @@ void AudioMixer::sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int l
 						   newlen * 2);    // mixer->internal_buffer.size() * 2); // len);
 }
 
+#ifdef __3DS__
+std::atomic<unsigned> n3ds_dbg_mix_calls{0};
+std::atomic<unsigned> n3ds_dbg_mix_peak{0};
+#endif
+
 void AudioMixer::MixAudio(sint16* stream, uint32 bytes) {
 	if (!audio_ok) {
 		return;
@@ -453,6 +460,19 @@ void AudioMixer::MixAudio(sint16* stream, uint32 bytes) {
 			channel.resampleAndMix(stream, bytes);
 		}
 	}
+#ifdef __3DS__
+	n3ds_dbg_mix_calls.fetch_add(1, std::memory_order_relaxed);
+	unsigned peak = 0;
+	for (uint32 i = 0; i < bytes / 2; i += 16) {
+		const unsigned a = static_cast<unsigned>(stream[i] < 0 ? -stream[i] : stream[i]);
+		if (a > peak) {
+			peak = a;
+		}
+	}
+	if (peak > n3ds_dbg_mix_peak.load(std::memory_order_relaxed)) {
+		n3ds_dbg_mix_peak.store(peak, std::memory_order_relaxed);
+	}
+#endif
 }
 
 void AudioMixer::openMidiOutput() {
