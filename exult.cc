@@ -250,14 +250,10 @@ void do_cleanup_output() {
 
 #ifdef __3DS__
 extern "C" {
-// Exult needs far more stack than the 3DS default (usecode interpreter,
-// pathfinding, deep C++ call chains).
-unsigned int __stacksize__ = 4 * 1024 * 1024;
-
-// libctru reserves 32 MB of "linear" memory for GPU-side buffers by default.
-// Exult only needs the framebuffers and audio buffers there, so keep most of
-// the RAM for the game itself (helps the original 3DS most).
-unsigned int __ctru_linear_heap_size = 6 * 1024 * 1024;
+// (Stack and heap sizes live in n3ds_heap.cc.)
+extern unsigned int __stacksize__;
+extern unsigned int __ctru_heap_size;
+extern unsigned int __ctru_linear_heap_size;
 
 // The 3DS scheduler is strictly priority based and newlib's sched_yield()
 // is a do-nothing stub, so a thread that "yields" while waiting for a
@@ -281,6 +277,8 @@ int main(int argc, char* argv[]) {
 	setvbuf(stdout, nullptr, _IONBF, 0);
 	setvbuf(stderr, nullptr, _IONBF, 0);
 	std::cout << "Exult 3DS: main() entered" << std::endl;
+	std::cout << "Exult 3DS: heap " << (__ctru_heap_size >> 20) << " MB, linear " << (__ctru_linear_heap_size >> 20)
+			  << " MB, stack " << (__stacksize__ >> 20) << " MB" << std::endl;
 #endif
 	bool needhelp    = false;
 	bool showversion = false;

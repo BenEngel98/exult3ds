@@ -117,6 +117,7 @@ EXULTSOURCES =	\
 	touchui.cc	\
 	touchui.h	\
 	n3ds_kbd.cc	\
+	n3ds_heap.cc	\
 	n3ds_kbd.h	\
 	tiles.h		\
 	tqueue.cc	\
