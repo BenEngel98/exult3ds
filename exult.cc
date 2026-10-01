@@ -807,11 +807,12 @@ bool Handle_device_connection_event(void* userdata, SDL_Event* event) {
  *  (walking); the touch screen acts as the mouse; the C-stick moves a mouse
  *  cursor on the game screen.
  *
- *    D-pad     arrow keys (walk)        Start   Esc (close / game menu)
- *    A         left mouse button        Select  swap game between screens
- *    B         right mouse button       L       C   (toggle combat)
- *    X         I   (inventory)          R       S   (save / restore)
- *    Y         Esc (close gump)         ZL      F   (eat)   ZR  K (use keys)
+ *    C-stick   mouse pointer            L       left mouse button
+ *    A         double-click (use/talk)  R       right mouse button
+ *    B         C   (combat on/off)      ZL      F   (eat)
+ *    X         I   (inventory)          ZR      K   (use keys)
+ *    Y         Z   (stats)              Start   Esc (close / game menu)
+ *    D-pad     arrow keys (step)        Select  swap game between screens
  */
 static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
 	switch (b) {
@@ -823,16 +824,14 @@ static SDL_Keycode n3ds_button_key(SDL_GamepadButton b) {
 		return SDLK_LEFT;
 	case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
 		return SDLK_RIGHT;
-	case SDL_GAMEPAD_BUTTON_WEST:    // Y
-		return SDLK_ESCAPE;
-	case SDL_GAMEPAD_BUTTON_NORTH:    // X
+	case SDL_GAMEPAD_BUTTON_SOUTH:    // B (bottom button)
+		return SDLK_C;
+	case SDL_GAMEPAD_BUTTON_WEST:    // Y (left button)
+		return SDLK_Z;
+	case SDL_GAMEPAD_BUTTON_NORTH:    // X (top button)
 		return SDLK_I;
 	case SDL_GAMEPAD_BUTTON_START:
 		return SDLK_ESCAPE;
-	case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-		return SDLK_C;
-	case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-		return SDLK_S;
 	default:
 		return SDLK_UNKNOWN;
 	}
@@ -945,12 +944,22 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 	// SDL names the face buttons by position: on the 3DS the right-hand button
 	// (A) is EAST and the bottom one (B) is SOUTH.
 	const SDL_GamepadButton gb = static_cast<SDL_GamepadButton>(event->gbutton.button);
-	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // A = left mouse button
+	if (gb == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) {    // L = left mouse button
 		n3ds_push_mouse_button(SDL_BUTTON_LEFT, event->gbutton.down, event->gbutton.timestamp);
 		return true;
 	}
-	if (gb == SDL_GAMEPAD_BUTTON_SOUTH) {    // B = right mouse button
+	if (gb == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {    // R = right mouse button
 		n3ds_push_mouse_button(SDL_BUTTON_RIGHT, event->gbutton.down, event->gbutton.timestamp);
+		return true;
+	}
+	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // A = double-click at the pointer (use / talk / open)
+		if (event->gbutton.down) {
+			const Uint64 ts = event->gbutton.timestamp;
+			n3ds_push_mouse_button(SDL_BUTTON_LEFT, true, ts);
+			n3ds_push_mouse_button(SDL_BUTTON_LEFT, false, ts);
+			n3ds_push_mouse_button(SDL_BUTTON_LEFT, true, ts);
+			n3ds_push_mouse_button(SDL_BUTTON_LEFT, false, ts);
+		}
 		return true;
 	}
 	if (gb == SDL_GAMEPAD_BUTTON_BACK) {    // Select = move the game to the other screen

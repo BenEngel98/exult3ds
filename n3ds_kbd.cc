@@ -101,10 +101,11 @@ namespace {
 	};
 
 	constexpr int KW  = 28;    // key width
-	constexpr int KH  = 36;    // key height
+	constexpr int KH  = 32;    // key height
 	constexpr int GAP = 4;
 	constexpr int X0  = 4;
-	constexpr int Y0  = 6;
+	constexpr int FH  = 24;    // function key row height
+	constexpr int Y0  = 4 + FH + GAP;    // first main row (below the F keys)
 
 	std::vector<Key> keys;
 
@@ -139,6 +140,16 @@ namespace {
 
 	void build_layout() {
 		keys.clear();
+		// Function keys F1..F12 across the top (Exult uses several of them).
+		{
+			static const char* flabels[12]
+					= {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"};
+			const int fw = 23;
+			const int fg = 3;
+			for (int i = 0; i < 12; i++) {
+				keys.push_back({X0 + i * (fw + fg), 4, fw, FH, flabels[i], static_cast<SDL_Keycode>(SDLK_F1 + i), 0, false});
+			}
+		}
 		add_row(0, "1234567890");
 		add_row(1, "QWERTYUIOP");
 		add_row(2, "ASDFGHJKL'");
