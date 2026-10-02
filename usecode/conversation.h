@@ -105,8 +105,12 @@ private:
 	int get_conv_bg_layer();
 	// Place the layer over a fixed 320x200 rectangle centered in the game area.
 	void position_conv_layer(int layer);
-	// Repaint the conversation into the overlay layer.
+public:
+	// Repaint the conversation into the overlay layer (also re-lays it out
+	// for the current screen size).
 	void repaint_conversation();
+
+private:
 	// Rebuild the overlay layer from the current faces, text and choices.
 	void render_conv_layer();
 	// Draw the Avatar's face and answer choices into the current target.

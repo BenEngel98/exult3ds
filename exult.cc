@@ -97,9 +97,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #ifdef __3DS__
+#	include <malloc.h>
 #	include <sys/stat.h>
 
 #	include "n3ds_fs.h"
+#	include "conversation.h"
 #	include "n3ds_file.h"
 #	include "n3ds_kbd.h"
 #endif
@@ -3637,8 +3639,10 @@ void n3ds_debug_tick() {
 	const unsigned calls = n3ds_dbg_mix_calls.exchange(0);
 	const unsigned peak  = n3ds_dbg_mix_peak.exchange(0);
 	const unsigned chans = n3ds_dbg_mix_channels.exchange(0);
+	const struct mallinfo mi = mallinfo();
 	std::cout << "3DS audio: " << calls << " mixer callbacks in 15 s, peak level " << peak << ", max sample channels " << chans
-			  << std::endl;
+			  << " | heap in use " << (mi.uordblks >> 10) << " KB, free " << (mi.fordblks >> 10) << " KB, arena "
+			  << (mi.arena >> 10) << " KB" << std::endl;
 }
 
 
@@ -3689,6 +3693,47 @@ void n3ds_apply_screen() {
 		// In game: resized() has already repainted the world.
 		gwin->set_all_dirty();
 		gwin->paint();
+		// Open windows keep their old position; nudge any that no longer fit
+		// (a 400-wide layout on the 320-wide bottom screen) back on screen.
+		if (Gump_manager* gm = gwin->get_gump_man()) {
+			for (Gump* g : *gm) {
+				if (g == nullptr || g->is_persistent()) {
+					continue;    // HUD pieces place themselves.
+				}
+				const TileRect r = g->get_rect();
+				if (r.w <= 0 || r.h <= 0) {
+					continue;
+				}
+				int rx = r.x;
+				int ry = r.y;
+				if (rx + r.w > w) {
+					rx = w - r.w;
+				}
+				if (ry + r.h > h) {
+					ry = h - r.h;
+				}
+				if (rx < 0) {
+					rx = 0;
+				}
+				if (ry < 0) {
+					ry = 0;
+				}
+				if (rx != r.x || ry != r.y) {
+					g->set_pos(g->get_x() + (rx - r.x), g->get_y() + (ry - r.y));
+				}
+			}
+			gwin->set_all_dirty();
+			gwin->paint();
+		}
+		// A conversation in progress keeps its own overlay; lay it out again
+		// for the new screen size.
+		if (Usecode_machine* uc = gwin->get_usecode()) {
+			if (Conversation* c = uc->get_conversation()) {
+				if (c->get_num_faces_on_screen() > 0) {
+					c->repaint_conversation();
+				}
+			}
+		}
 	} else if (!saved.empty() && redirect == nullptr) {
 		// A plain (non-scene) static screen: put the old pixels back.
 		if (Image_buffer8* ib = win->get_ib8()) {

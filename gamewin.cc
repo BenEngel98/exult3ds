@@ -935,12 +935,17 @@ void Game_window::resized(
 	}
 	center_view(main_actor->get_tile());
 	paint();
+#ifndef __3DS__
 	// Do the following only if in game (not for menus)
 	if (!gump_man->gump_mode()) {
 		char msg[80];
 		snprintf(msg, sizeof(msg), "%ux%ux%u", neww, newh, newsc);
 		effects->center_text(msg);
 	}
+#else
+	// 3DS: the only resize is the Select screen swap; the "400x240x1" notice
+	// would linger through conversations (the world is frozen then), so skip it.
+#endif
 	if (g_shortcutBar) {
 		g_shortcutBar->set_changed();
 	}

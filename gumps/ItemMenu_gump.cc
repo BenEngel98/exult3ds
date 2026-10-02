@@ -163,6 +163,12 @@ Itemmenu_gump::Itemmenu_gump(Game_object* obj, int ox, int oy, int cx, int cy)
 }
 
 Itemmenu_gump::~Itemmenu_gump() {
+	// The menu has already been taken out of the gump list, but its overlay
+	// layer lives until ~Gump() runs. The action below may start a whole
+	// conversation, so drop the layer first or the menu stays on screen over
+	// the dialogue.
+	free_render_layer();
+	gwin->set_all_dirty();
 	postCloseActions();
 }
 

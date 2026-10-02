@@ -60,6 +60,10 @@ public:
 	constexpr static const size_t max_num_gflags = 32768;
 	constexpr static const size_t last_gflag     = max_num_gflags - 1;
 
+	Conversation* get_conversation() const {
+		return conv;
+	}
+
 	friend class Usecode_script;
 	// Create Usecode_internal.
 	static Usecode_machine* create();
