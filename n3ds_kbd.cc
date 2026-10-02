@@ -392,6 +392,55 @@ void n3ds_kbd_present() {
 	}
 }
 
+void n3ds_message_screen(const char* l1, const char* l2, const char* l3, const char* l4) {
+	int            count    = 0;
+	SDL_DisplayID* displays = SDL_GetDisplays(&count);
+	SDL_DisplayID  top      = (displays && count > 0) ? displays[0] : 0;
+	SDL_free(displays);
+	SDL_PropertiesID props = SDL_CreateProperties();
+	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "message");
+	if (top) {
+		SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(top));
+		SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(top));
+	}
+	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 400);
+	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 240);
+	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+	SDL_Window* win = SDL_CreateWindowWithProperties(props);
+	SDL_DestroyProperties(props);
+	if (!win) {
+		return;
+	}
+	const char* lines[4] = {l1, l2, l3, l4};
+	const Uint64 start   = SDL_GetTicks();
+	bool         done    = false;
+	while (!done && SDL_GetTicks() - start < 15000) {
+		if (SDL_Surface* s = SDL_GetWindowSurface(win)) {
+			fill_rect(s, 0, 0, s->w, s->h, 40, 10, 10);
+			int y = 60;
+			for (int i = 0; i < 4; i++) {
+				if (lines[i] == nullptr || !*lines[i]) {
+					y += 20;
+					continue;
+				}
+				const int scale = (i == 0) ? 3 : 2;
+				const int tw    = text_width(lines[i], scale);
+				draw_text(s, (s->w - tw) / 2, y, lines[i], scale, 240, 220, 220);
+				y += 7 * scale + 12;
+			}
+			SDL_UpdateWindowSurface(win);
+		}
+		SDL_Event ev;
+		while (SDL_PollEvent(&ev)) {
+			if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || ev.type == SDL_EVENT_FINGER_DOWN || ev.type == SDL_EVENT_QUIT) {
+				done = true;
+			}
+		}
+		SDL_Delay(50);
+	}
+	SDL_DestroyWindow(win);
+}
+
 bool n3ds_kbd_handle_event(SDL_Event* event) {
 	// A handheld never really loses focus; SDL hands the focus to whichever
 	// window was created last, which would pause the game whenever the

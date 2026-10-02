@@ -118,8 +118,6 @@ EXULTSOURCES =	\
 	touchui.h	\
 	n3ds_kbd.cc	\
 	n3ds_heap.cc	\
-	n3ds_file.cc	\
-	n3ds_file.h	\
 	n3ds_fs.cc	\
 	n3ds_fs.h	\
 	n3ds_kbd.h	\

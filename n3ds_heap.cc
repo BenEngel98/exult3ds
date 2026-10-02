@@ -88,6 +88,16 @@ void __system_allocateHeaps(void) {
 	fake_heap_end   = fake_heap_start + __ctru_heap_size;
 }
 
+// True on a New 3DS / New 2DS (the extra CPU speed and the 124 MB of
+// application memory are what this port needs).
+bool n3ds_is_new_3ds(void) {
+	bool is_new = false;
+	if (R_FAILED(APT_CheckNew3DS(&is_new))) {
+		return false;
+	}
+	return is_new;
+}
+
 }    // extern "C"
 
 #endif    // __3DS__

@@ -16,6 +16,7 @@
 #	include <cerrno>
 #	include <cstdio>
 #	include <cstring>
+#	include <fstream>
 #	include <iostream>
 #	include <memory>
 #	include <streambuf>
@@ -117,6 +118,17 @@ std::unique_ptr<std::istream> n3ds_open_in(const char* name, std::ios_base::open
 	const long size = std::ftell(f);
 	if (size < 0) {
 		std::fclose(f);
+		return nullptr;
+	}
+	if (size > 12L * 1024 * 1024) {
+		// Very large files (the 14 MB exult_bg.flx in romfs) are streamed
+		// normally rather than copied into RAM; there are only one or two of
+		// them, so the handle count stays small.
+		std::fclose(f);
+		auto file = std::make_unique<std::ifstream>(name, mode | std::ios::binary);
+		if (file->good()) {
+			return file;
+		}
 		return nullptr;
 	}
 	std::rewind(f);

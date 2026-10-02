@@ -48,6 +48,10 @@ bool n3ds_take_screen_swap_request();
 // Re-create the game window on the screen chosen by n3ds_game_on_bottom()
 // and the keyboard / mirror on the other one (defined in exult.cc).
 void n3ds_apply_screen();
+
+// Show up to four lines of text on the top screen and wait for a button
+// (or a few seconds). Used for fatal start-up messages; needs SDL video.
+void n3ds_message_screen(const char* l1, const char* l2, const char* l3, const char* l4);
 void n3ds_debug_tick();
 
 #endif    // __3DS__

@@ -102,7 +102,6 @@
 
 #	include "n3ds_fs.h"
 #	include "conversation.h"
-#	include "n3ds_file.h"
 #	include "n3ds_kbd.h"
 #endif
 static const SDL_MouseID EXSDL_TOUCH_MOUSEID = SDL_TOUCH_MOUSEID;
@@ -259,6 +258,7 @@ extern "C" {
 extern unsigned int __stacksize__;
 extern unsigned int __ctru_heap_size;
 extern unsigned int __ctru_linear_heap_size;
+bool                n3ds_is_new_3ds(void);
 
 // The 3DS scheduler is strictly priority based and newlib's sched_yield()
 // is a do-nothing stub, so a thread that "yields" while waiting for a
@@ -285,6 +285,15 @@ int main(int argc, char* argv[]) {
 	std::cout << "Exult 3DS: heap " << (__ctru_heap_size >> 20) << " MB, linear " << (__ctru_linear_heap_size >> 20)
 			  << " MB, stack " << (__stacksize__ >> 20) << " MB" << std::endl;
 	n3ds_fs_report("start");
+	if (!n3ds_is_new_3ds()) {
+		// The original 3DS has neither the memory nor the CPU for this port.
+		std::cout << "Exult 3DS: this is not a New 3DS - stopping." << std::endl;
+		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+			n3ds_message_screen("NEW 3DS ONLY", "THIS BUILD NEEDS A NEW 3DS", "OR NEW 2DS XL", "PRESS ANY BUTTON");
+			SDL_Quit();
+		}
+		std::exit(1);
+	}
 #endif
 	bool needhelp    = false;
 	bool showversion = false;
@@ -301,12 +310,6 @@ int main(int argc, char* argv[]) {
 	U7set_istream_factory(n3ds_open_in);
 #else
 	U7set_istream_factory([](const char* s, std::ios_base::openmode mode) -> std::unique_ptr<std::istream> {
-#ifdef __3DS__
-		// Keep the number of open SD card files small: see n3ds_file.cc.
-		if (auto mem = n3ds_open_in_memory(s, mode, 2 * 1024 * 1024)) {
-			return mem;
-		}
-#endif
 		auto file = std::make_unique<std::ifstream>(s, mode);
 		if (file->good()) {
 			return file;
