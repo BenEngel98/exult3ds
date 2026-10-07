@@ -199,6 +199,10 @@ public:
 	bool activate(MouseButton button) override;
 	void double_clicked(int x, int y) override;
 
+	bool wants_double_click() const override {
+		return true;    // casting is a double-click
+	}
+
 	bool push(MouseButton button) override {
 		return button == MouseButton::Left;
 	}

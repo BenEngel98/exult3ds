@@ -860,7 +860,10 @@ bool Handle_device_connection_event(void* userdata, SDL_Event* event) {
  *  cursor on the game screen.
  *
  *    C-stick   mouse pointer            L       left mouse button
- *    A         double-click (use/talk)  R       right mouse button
+ *    A         act on what is under     R       right mouse button
+ *              the pointer: double-
+ *              click on things, single
+ *              click on buttons/answers
  *    B         C   (combat on/off)      ZL      F   (eat)
  *    X         I   (inventory)          ZR      K   (use keys)
  *    Y         Z   (stats)              Start   Esc (close / game menu)
@@ -962,6 +965,46 @@ static void n3ds_push_mouse_button(Uint8 button, bool down, Uint64 ts) {
 	SDL_PushEvent(&ev);
 }
 
+// A means "do the thing under the pointer".  In the world and on items in
+// a container that is a double-click (use / talk / open), but buttons, menus,
+// modal windows, conversation answers and books expect a single click: a
+// second click there would press the button again (combat toggles twice) or
+// fall through onto whatever is underneath once the window closes.
+static int n3ds_clicks_for_a() {
+	if (g_waiting_for_click || gwin == nullptr || gwin->get_main_actor() == nullptr) {
+		return 1;    // conversations, target crosshairs, books, title and game menus
+	}
+	Gump_manager* gman = gwin->get_gump_man();
+	if (gman == nullptr) {
+		return 2;
+	}
+	if (gman->modal_gump_mode()) {
+		return 1;    // game menu, item menu, yes/no, save/load, options...: one click, anywhere
+	}
+	int x;
+	int y;
+	gwin->get_win()->screen_to_game(
+			static_cast<int>(n3ds_cur_x), static_cast<int>(n3ds_cur_y), gwin->get_fastmouse(), x, y);
+	Gump* gump = gman->find_gump(x, y, false);
+	if (gump == nullptr) {
+		return 2;    // the world: use / talk / open
+	}
+	if (gump->is_modal()) {
+		return 1;    // game menu, item menu, yes/no, save/load, options...
+	}
+	int gx;
+	int gy;
+	gman->map_game_to_gump(gump, x, y, gx, gy);
+	if (gump->find_object(gx, gy) != nullptr) {
+		return 2;    // an item inside an inventory or container
+	}
+	Gump_button* btn = gump->on_button(gx, gy);
+	if (btn != nullptr && btn->wants_double_click()) {
+		return 2;    // a spell: cast it
+	}
+	return 1;    // a button, or an empty part of a window
+}
+
 static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 	ignore_unused_variable_warning(userdata);
 	if (event->type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event->type != SDL_EVENT_GAMEPAD_BUTTON_UP) {
@@ -1004,13 +1047,14 @@ static bool SDLCALL n3ds_gamepad_watch(void* userdata, SDL_Event* event) {
 		n3ds_push_mouse_button(SDL_BUTTON_RIGHT, event->gbutton.down, event->gbutton.timestamp);
 		return true;
 	}
-	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // A = double-click at the pointer (use / talk / open)
+	if (gb == SDL_GAMEPAD_BUTTON_EAST) {    // A = act on what is under the pointer
 		if (event->gbutton.down) {
-			const Uint64 ts = event->gbutton.timestamp;
-			n3ds_push_mouse_button(SDL_BUTTON_LEFT, true, ts);
-			n3ds_push_mouse_button(SDL_BUTTON_LEFT, false, ts);
-			n3ds_push_mouse_button(SDL_BUTTON_LEFT, true, ts);
-			n3ds_push_mouse_button(SDL_BUTTON_LEFT, false, ts);
+			const Uint64 ts     = event->gbutton.timestamp;
+			const int    clicks = n3ds_clicks_for_a();
+			for (int i = 0; i < clicks; ++i) {
+				n3ds_push_mouse_button(SDL_BUTTON_LEFT, true, ts);
+				n3ds_push_mouse_button(SDL_BUTTON_LEFT, false, ts);
+			}
 		}
 		return true;
 	}

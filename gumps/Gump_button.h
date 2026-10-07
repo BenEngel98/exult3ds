@@ -89,6 +89,11 @@ public:
 		return false;
 	}
 
+	// True if the button does its real work on a double-click (spells).
+	virtual bool wants_double_click() const {
+		return false;
+	}
+
 	Gump_button* as_button() override {
 		return this;
 	}
