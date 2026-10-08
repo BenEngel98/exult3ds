@@ -247,6 +247,12 @@ namespace {
 			te.text.text      = buf;
 			SDL_PushEvent(&te);
 		}
+
+		// Shift applies to one key only: once that key is released, drop it.
+		if (!down && shifted && !k.is_shift) {
+			shifted = false;
+			dirty   = true;
+		}
 	}
 
 	void draw_keyboard(SDL_Surface* s) {

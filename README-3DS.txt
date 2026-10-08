@@ -54,7 +54,7 @@ Controls
   Start          Esc: close the top window, or open the game menu
   Select         swap the game between the two screens
   Touch keyboard F1-F12, letters, numbers, Esc, Shift (^), Space,
-                 Backspace (<), Enter
+                 Backspace (<), Enter. Shift applies to the next key only.
   Home           quit
 
 Touch (when the game is on the bottom screen): tap an object for a small
