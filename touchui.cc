@@ -21,6 +21,7 @@
 #include "touchui.h"
 
 #include "gamewin.h"
+#include "ignore_unused_variable_warning.h"
 
 #include <cstring>
 #include <limits>
@@ -42,6 +43,13 @@ void TouchUI::onTextInput(const char* text) {
 }
 
 void TouchUI::startTextInput(SDL_Window* window) {
+#ifdef __3DS__
+	// The keyboard on the bottom screen types straight into the game as key
+	// presses; telling SDL that text input has started would bring up the
+	// 3DS system keyboard applet on top of it.
+	ignore_unused_variable_warning(window);
+	return;
+#endif
 	SDL_PropertiesID props = SDL_CreateProperties();
 	SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
 	SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_CAPITALIZATION_NUMBER, SDL_CAPITALIZE_NONE);
